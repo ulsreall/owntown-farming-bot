@@ -17,7 +17,7 @@ function log(m) {
   process.stdout.write(l + '\n');
 }
 
-log('=== OWNTOWN PROFIT FARMER v23.0 ===');
+log('=== OWNTOWN PROFIT FARMER v23.2 ===');
 log('FULL FEATURED: PvP + Property + Shop + Crafting + Bank + Vehicle + Smart Sell');
 
 // ============ CONSTANTS ============
@@ -661,6 +661,10 @@ function freshSell(sock, cb) {
         if(safeQS.length > 0) {
           log(`💰 sellAll ${safeQS.length} safe QS items...`);
           sock.emit('marketplace:sellAll');
+          // Also individual quickSell for each item
+          for(const item of safeQS) {
+            sock.emit('marketplace:quickSell', { instanceId: item.instanceId, qty: item.qty });
+          }
         }
       }
       setTimeout(() => {
@@ -810,13 +814,18 @@ function runNextCycle(sock) {
   const order = ['sell', 'mining', 'fishing', 'combat', 'pvp', 'mining', 'fishing', 'combat'];
   const type = order[(stats.cycles - 1) % order.length];
 
-  // Skip sell phase (disabled)
+  // Sell phase: only run when inventory is near capacity or every 8th cycle
   if(type === 'sell') {
-    stats.cycles++;
-    // But do check bank and economy during sell skip
     checkLedger(sock);
-    setTimeout(() => runNextCycle(sock), 1000);
-    return;
+    if(inventory.length >= CARRY_CAP - 5 || stats.cycles % 8 === 1) {
+      log(`\n=== Cycle ${stats.cycles}: SELL (inv: ${inventory.length}/${CARRY_CAP}) ===`);
+      doSellPhase(sock, () => setTimeout(() => runNextCycle(sock), 3000));
+      return;
+    } else {
+      stats.cycles++;
+      setTimeout(() => runNextCycle(sock), 1000);
+      return;
+    }
   }
 
   // Skip PvP if not enough level/stamina
@@ -883,7 +892,18 @@ function startAction(sock, type) {
   }
   else if(type === 'pvp') {
     pvpQueue(sock);
-    doActions(sock, type);
+    // PvP: try once, if NO_MATCH skip quickly
+    let pvpAttempts = 0;
+    const pvpTry = () => {
+      pvpAttempts++;
+      if(pvpAttempts > 2) {
+        log(`⚔️ PvP: No opponent found, skipping`);
+        setTimeout(() => runNextCycle(sock), 2000);
+        return;
+      }
+      pvpAttack(sock);
+    };
+    setTimeout(pvpTry, 2000);
   }
   else doActions(sock, type);
 }
@@ -1059,7 +1079,12 @@ async function startBot() {
     if(d.entries) {
       economyLedger = d.entries;
       const recent = d.entries.slice(0, 5);
-      log(`📊 Ledger: ${d.entries.length} entries, recent: ${recent.map(e => `${e.type}:${e.amount}`).join(', ')}`);
+      const summary = recent.map(e => {
+        const typ = e.type || e.kind || e.action || '?';
+        const amt = e.amount || e.value || e.otwn || 0;
+        return `${typ}:${amt}`;
+      }).join(', ');
+      log(`📊 Ledger: ${d.entries.length} entries, recent: ${summary}`);
     }
   });
 
@@ -1193,11 +1218,16 @@ async function startBot() {
     }, 3000);
   });
 
+  let disconnectCount = 0;
   socket.on('disconnect', () => {
     log('Disconnected!');
     connected = false;
-    disconnectTimer = setTimeout(() => { log('⚠️ Reconnecting...'); startBot(); }, 30000);
+    disconnectCount++;
+    const delay = Math.min(30000, 5000 * Math.pow(2, disconnectCount - 1)); // exponential backoff max 30s
+    log(`⚠️ Reconnecting in ${delay/1000}s (attempt ${disconnectCount})...`);
+    disconnectTimer = setTimeout(() => { startBot(); }, delay);
   });
+  socket.on('connect', () => { disconnectCount = 0; });
 
   socket.on('connect_error', (err) => {
     if(err.message === 'BAD_TOKEN' || err.message === 'NO_TOKEN') {
