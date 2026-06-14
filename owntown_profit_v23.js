@@ -944,9 +944,9 @@ function runNextCycle(sock) {
     return;
   }
 
-  // Skip PvP if not enough level/stamina
-  if(type === 'pvp' && (level < 5 || stamina < 30)) {
-    log(`⚔️ PvP skip: Lv${level} STA:${stamina}`);
+  // Skip PvP — never finds matches, leaves bot in wrong zone
+  if(type === 'pvp') {
+    log(`⚔️ PvP skip: no opponents`);
     stats.cycles++;
     setTimeout(() => runNextCycle(sock), H.humanDelay(1000, 0.3, 0.1));
     return;
