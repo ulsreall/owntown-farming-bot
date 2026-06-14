@@ -884,7 +884,7 @@ function runNextCycle(sock) {
   if(humanAction) {
     if(humanAction === 'check_ledger') { checkLedger(sock); H.bumpStat('humanActions'); }
     else if(humanAction === 'idle_browse') { sock.emit('marketplace:list'); H.bumpStat('humanActions'); }
-    else if(humanAction === 'check_property') { sock.emit('property:info', {}); H.bumpStat('humanActions'); }
+    else if(humanAction === 'check_property') { H.bumpStat('humanActions'); }
     else if(humanAction === 'check_bank') { checkBank(token); H.bumpStat('humanActions'); }
     else {
       // Random idle pause
