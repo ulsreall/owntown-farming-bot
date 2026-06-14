@@ -954,23 +954,8 @@ function runNextCycle(sock) {
 
   log(`\n=== Cycle ${stats.cycles}: ${type.toUpperCase()} ===`);
 
-  let waypoints;
-  if(type === 'mining') waypoints = getMiningWaypoints();
-  else if(type === 'combat') waypoints = getCombatWaypoints();
-  else if(type === 'pvp') {
-    waypoints = [{x:0,z:0}, {x:-30,z:0}];
-  }
-  else waypoints = WAYPOINTS_BASE[type] || [{x:0,z:0}];
-
-  walkStaged(sock, waypoints, 0, () => {
-    if(!connected) return;
-    const expected = EXPECTED_ZONE[type];
-    if(expected && zone !== expected && zone !== 'unknown') {
-      log(`⚠️ Zone: expected ${expected}, got ${zone} — trying anyway`);
-      stats.wrongZone++;
-    }
-    startAction(sock, type);
-  });
+  // Skip walkStaged — just do action from current position (prevents long walk disconnects)
+  startAction(sock, type);
 }
 
 function getMiningWaypoints() {
