@@ -17,7 +17,7 @@ function log(m) {
   process.stdout.write(l + '\n');
 }
 
-log('=== OWNTOWN PROFIT FARMER v23.2 ===');
+log('=== OWNTOWN PROFIT FARMER v23.3 ===');
 log('FULL FEATURED: PvP + Property + Shop + Crafting + Bank + Vehicle + Smart Sell');
 
 // ============ CONSTANTS ============
@@ -37,10 +37,10 @@ const HEAL_HP = 80;
 
 // ============ PRICE FLOORS ============
 const PRICE_FLOOR = {
-  fish_sun_carp: 2000, fish_moon_koi: 500, fish_void_angler: 300,
-  fish_abyssal_lantern: 300, fish_golden_koi: 300, fish_silver_darter: 30,
-  mat_resonance_core: 5000, mat_raw_resonite: 10, mat_circuit_scrap: 10,
-  mat_iron_shard: 5, mat_carbon_fiber: 5, wpn_arc_baton: 500, wpn_rail_lance: 2000,
+  fish_sun_carp: 1800, fish_moon_koi: 1200, fish_void_angler: 300,
+  fish_abyssal_lantern: 300, fish_golden_koi: 300, fish_silver_darter: 25,
+  mat_resonance_core: 100000, mat_raw_resonite: 8, mat_circuit_scrap: 100,
+  mat_iron_shard: 5, mat_carbon_fiber: 10, wpn_arc_baton: 500, wpn_rail_lance: 2000,
 };
 
 const QUICKSELL = {
@@ -62,7 +62,8 @@ const KEEP = new Set([
 const MARKETPLACE_ONLY = new Set([
   'fish_sun_carp','fish_moon_koi','fish_void_angler',
   'fish_abyssal_lantern','fish_golden_koi','fish_silver_darter',
-  'mat_resonance_core','wpn_arc_baton','wpn_rail_lance'
+  'mat_resonance_core','wpn_arc_baton','wpn_rail_lance',
+  'mat_circuit_scrap'  // Always list on marketplace (142 vs QS 3)
 ]);
 
 const SAFE_QUICKSELL = new Set([
@@ -605,15 +606,22 @@ function doSellPhase(sock, cb) {
   }
   log(`💰 SELL — ${inventory.length} stacks (value: ~${totalValue} OTWN), daily ${dailyEarned}/${DAILY_EARN_CAP}`);
 
-  const oldListings = [...myActiveListings];
+  // Only cancel listings that are significantly above market price
+  const oldListings = [...myActiveListings].filter(l => {
+    const mktPrice = marketPrices[l.defId];
+    if (!mktPrice) return false; // keep if no market data
+    const ppu = l.price / (l.qty || 1);
+    return ppu > mktPrice * 1.5; // only cancel if 50%+ above market
+  });
+  
   function cancelNext(idx) {
     if(idx >= oldListings.length) { freshSell(sock, cb); return; }
     sock.emit('marketplace:cancel', { listingId: oldListings[idx].id });
-    log(`🔄 Cancel: ${oldListings[idx].defId} @${oldListings[idx].price}`);
+    log(`🔄 Cancel overpriced: ${oldListings[idx].defId} @${oldListings[idx].price}`);
     stats.canceled++;
     setTimeout(() => cancelNext(idx + 1), 1500);
   }
-  if(oldListings.length > 0) { log(`🔄 Cancel ${oldListings.length} old listings...`); cancelNext(0); }
+  if(oldListings.length > 0) { log(`🔄 Cancel ${oldListings.length} overpriced listings...`); cancelNext(0); }
   else freshSell(sock, cb);
 }
 
@@ -817,7 +825,7 @@ function runNextCycle(sock) {
   // Sell phase: only run when inventory is near capacity or every 8th cycle
   if(type === 'sell') {
     checkLedger(sock);
-    if(inventory.length >= CARRY_CAP - 5 || stats.cycles % 8 === 1) {
+    if(inventory.length >= CARRY_CAP - 10 || stats.cycles % 4 === 1) {
       log(`\n=== Cycle ${stats.cycles}: SELL (inv: ${inventory.length}/${CARRY_CAP}) ===`);
       doSellPhase(sock, () => setTimeout(() => runNextCycle(sock), 3000));
       return;
@@ -1192,30 +1200,41 @@ async function startBot() {
 
   // === CONNECTION ===
   let disconnectTimer = null;
+  let lastConnectTime = 0;
   socket.on('connect', () => {
     connected = true;
+    const now = Date.now();
+    const timeSinceLastConnect = now - lastConnectTime;
+    lastConnectTime = now;
+    
     if(disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
     log('Connected!');
-    let started = false;
-    socket.on('player:correction', function onCorr(d) {
-      if(!started && d.pos) {
-        pos.x = d.pos.x; pos.z = d.pos.z; started = true;
-        socket.removeListener('player:correction', onCorr);
-        log(`Pos:(${pos.x.toFixed(1)},${pos.z.toFixed(1)}) zone:${zone}`);
-        waitForInventory(socket, () => {
-          // v23: Initial setup after connect
-          checkLedger(socket);
-          checkBank(token);
-          runNextCycle(socket);
-        });
-      }
-    });
+    
+    // Add delay if reconnecting too fast
+    const connectDelay = timeSinceLastConnect < 10000 ? 5000 : 1000;
+    
     setTimeout(() => {
-      if(!started) {
-        started = true;
-        waitForInventory(socket, () => runNextCycle(socket));
-      }
-    }, 3000);
+      let started = false;
+      socket.on('player:correction', function onCorr(d) {
+        if(!started && d.pos) {
+          pos.x = d.pos.x; pos.z = d.pos.z; started = true;
+          socket.removeListener('player:correction', onCorr);
+          log(`Pos:(${pos.x.toFixed(1)},${pos.z.toFixed(1)}) zone:${zone}`);
+          waitForInventory(socket, () => {
+            // v23: Initial setup after connect
+            checkLedger(socket);
+            checkBank(token);
+            runNextCycle(socket);
+          });
+        }
+      });
+      setTimeout(() => {
+        if(!started) {
+          started = true;
+          waitForInventory(socket, () => runNextCycle(socket));
+        }
+      }, 3000);
+    }, connectDelay);
   });
 
   let disconnectCount = 0;
