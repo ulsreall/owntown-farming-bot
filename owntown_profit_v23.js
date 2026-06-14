@@ -987,8 +987,8 @@ function startAction(sock, type) {
     doActions(sock, type);
   }
   else if(type === 'mining') {
-    const node = MINING_NODES[stats.currentNodeIdx % MINING_NODES.length];
-    walkDirect(sock, node.pos, () => doActions(sock, type));
+    // Don't walk to node — too far, causes disconnect. Mine from current pos.
+    doActions(sock, type);
   }
   else if(type === 'pvp') {
     pvpQueue(sock);
