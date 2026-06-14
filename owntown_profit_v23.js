@@ -4,7 +4,6 @@ const https = require('https');
 const nacl = require('tweetnacl');
 const bs58 = require('bs58').default;
 const H = require('./humanize');  // Anti-detection helpers
-const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // ============ CONFIG ============
 const TOKEN_PATH = '/tmp/owntown_token.txt';
@@ -13,23 +12,9 @@ const WALLET_FILE = '/root/.hermes/owntown-attack-wallet.json';
 const LOG = '/tmp/owntown_v23.log';
 fs.writeFileSync(LOG, '');
 
-// ============ PROXY POOL ============
-const PROXY_CREDS = 'e5tmelqjx7qm:7dhznfcchmsr22l';
-const PROXY_POOL = [
-  '193.56.28.155:3129', '193.56.28.171:3129', '195.63.31.48:3129',
-  '151.123.178.2:3129',
-  '209.50.186.129:3129', '209.50.181.125:3129', '209.50.172.10:3129',
-  '65.111.20.189:3129', '65.111.12.70:3129', '65.111.6.193:3129',
-];
-let _proxyIdx = 0;
-function getProxy() {
-  const p = PROXY_POOL[_proxyIdx % PROXY_POOL.length];
-  _proxyIdx++;
-  return `http://${PROXY_CREDS}@${p}`;
-}
-function getProxyAgent() {
-  return new HttpsProxyAgent(getProxy());
-}
+// ============ PROXY: Cloudflare WARP (system-level) ============
+// All traffic routed through WARP — no per-connection proxy needed
+function getProxyAgent() { return undefined; }
 
 function log(m) {
   const l = new Date().toISOString().slice(11,19) + ' | ' + m;
@@ -221,8 +206,7 @@ function apiRequest(method, path, body, token) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (data) headers['Content-Length'] = Buffer.byteLength(data);
     const req = https.request({
-      hostname: 'owntown.fun', path, method, headers,
-      agent: getProxyAgent()
+      hostname: 'owntown.fun', path, method, headers
     }, (res) => {
       let d = '';
       res.on('data', c => d += c);
@@ -1040,7 +1024,7 @@ async function startBot() {
     try { global._activeSocket.removeAllListeners(); global._activeSocket.disconnect(); } catch(e) {}
     global._activeSocket = null;
   }
-  const socket = io('https://owntown.fun', { auth: { token }, transports: ['polling'], reconnection: false, agent: getProxyAgent() });
+  const socket = io('https://owntown.fun', { auth: { token }, transports: ['polling'], reconnection: false });
   global._activeSocket = socket;
 
   // === PLAYER STATE ===
