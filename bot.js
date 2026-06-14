@@ -16,10 +16,10 @@ fs.writeFileSync(LOG, '');
 // ============ PROXY POOL ============
 const PROXY_CREDS = 'e5tmelqjx7qm:7dhznfcchmsr22l';
 const PROXY_POOL = [
+  '193.56.28.155:3129', '193.56.28.171:3129', '195.63.31.48:3129',
+  '151.123.178.2:3129',
   '209.50.186.129:3129', '209.50.181.125:3129', '209.50.172.10:3129',
-  '209.50.173.97:3129', '65.111.20.189:3129', '65.111.12.70:3129',
-  '65.111.6.193:3129', '209.50.175.125:3129', '65.111.21.208:3129',
-  '193.56.28.155:3129',
+  '65.111.20.189:3129', '65.111.12.70:3129', '65.111.6.193:3129',
 ];
 let _proxyIdx = 0;
 function getProxy() {
@@ -1029,7 +1029,7 @@ async function startBot() {
     try { global._activeSocket.removeAllListeners(); global._activeSocket.disconnect(); } catch(e) {}
     global._activeSocket = null;
   }
-  const socket = io('https://owntown.fun', { auth: { token }, transports: ['websocket'], reconnection: false, agent: getProxyAgent() });
+  const socket = io('https://owntown.fun', { auth: { token }, transports: ['polling'], reconnection: false, agent: getProxyAgent() });
   global._activeSocket = socket;
 
   // === PLAYER STATE ===
