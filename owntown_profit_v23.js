@@ -920,14 +920,6 @@ function runNextCycle(sock) {
     }
   }
 
-  // Skip fishing when not in pond zone — server disconnects if fishing in wrong zone
-  if(type === 'fishing' && zone !== 'pond') {
-    log(`🎣 Skip: zone ${zone} (need pond)`);
-    stats.cycles++;
-    setTimeout(() => runNextCycle(sock), H.humanDelay(1000, 0.3, 0.1));
-    return;
-  }
-
   // Skip fishing when daily cap hit — save proxy bandwidth
   if(type === 'fishing' && stats.dailyEarned >= 5000) {
     log(`🎣 Skip: daily cap ${stats.dailyEarned}/5000`);
@@ -954,13 +946,6 @@ function runNextCycle(sock) {
 
   log(`\n=== Cycle ${stats.cycles}: ${type.toUpperCase()} ===`);
 
-  // Walk to correct zone only if needed
-  if(type === 'mining' && zone !== 'deepworks') {
-    log(`⛏ Skip: zone ${zone} (need deepworks)`);
-    stats.cycles++;
-    setTimeout(() => runNextCycle(sock), H.humanDelay(1000, 0.3, 0.1));
-    return;
-  }
   startAction(sock, type);
 }
 
@@ -1034,7 +1019,10 @@ async function startBot() {
   socket.on('player:correction', (d) => { if(d.pos) { pos.x = d.pos.x; pos.z = d.pos.z; } });
   socket.on('player:state', (d) => {
     const newZone = d.zone || d.zoneName;
-    if(newZone) { zone = newZone; log(`📍 Zone: ${zone}`); }
+    if(newZone && newZone !== 'unknown') { zone = newZone; log(`📍 Zone: ${zone}`); }
+    else if(zone === 'unknown' && (d.zone !== undefined || d.zoneName !== undefined)) {
+      log(`📍 Zone debug: zone=${JSON.stringify(d.zone)} zoneName=${JSON.stringify(d.zoneName)} mapId=${JSON.stringify(d.mapId)}`);
+    }
     if(d.gameBalance !== undefined) balance = d.gameBalance;
     if(d.level !== undefined) level = d.level;
     if(d.stamina !== undefined) stamina = d.stamina;
