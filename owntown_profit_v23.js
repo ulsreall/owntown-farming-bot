@@ -985,8 +985,15 @@ function startAction(sock, type) {
     doActions(sock, type);
   }
   else if(type === 'mining') {
-    // Mine from current position — don't walk to node (causes disconnects)
-    doActions(sock, type);
+    // Walk to node if far, then mine
+    const node = MINING_NODES[stats.currentNodeIdx % MINING_NODES.length];
+    const dx = node.pos.x - pos.x, dz = node.pos.z - pos.z;
+    const dist = Math.sqrt(dx*dx + dz*dz);
+    if(dist > 15) {
+      walkDirect(sock, node.pos, () => doActions(sock, type));
+    } else {
+      doActions(sock, type);
+    }
   }
   else if(type === 'pvp') {
     pvpQueue(sock);
