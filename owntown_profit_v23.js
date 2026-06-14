@@ -899,10 +899,10 @@ function runNextCycle(sock) {
   // v23: Enhanced cycle order — reshuffle non-sell portion for variety
   let order;
   if(stats.cycles % 8 === 1) {
-    const tail = H.shuffle(['mining', 'fishing', 'combat', 'pvp', 'mining', 'fishing', 'combat']);
+    const tail = H.shuffle(['mining', 'fishing', 'combat', 'mining', 'fishing', 'combat', 'mining']);
     order = ['sell', ...tail];
   } else {
-    order = ['sell', 'mining', 'fishing', 'combat', 'pvp', 'mining', 'fishing', 'combat'];
+    order = ['sell', 'mining', 'fishing', 'combat', 'mining', 'fishing', 'combat', 'mining'];
   }
   const type = order[(stats.cycles - 1) % order.length];
 
@@ -954,22 +954,14 @@ function runNextCycle(sock) {
 
   log(`\n=== Cycle ${stats.cycles}: ${type.toUpperCase()} ===`);
 
-  // Walk to correct zone only if needed and close enough
+  // Walk to correct zone only if needed
   if(type === 'mining' && zone !== 'deepworks') {
-    // Walk to deepworks once, then stay there
-    walkDirect(sock, {x:50,z:-60}, () => {
-      if(!connected) return;
-      startAction(sock, type);
-    });
-  } else if(type === 'combat' && zone !== 'redline_a') {
-    // Walk to combat zone
-    walkDirect(sock, {x:-30,z:0}, () => {
-      if(!connected) return;
-      startAction(sock, type);
-    });
-  } else {
-    startAction(sock, type);
+    log(`⛏ Skip: zone ${zone} (need deepworks)`);
+    stats.cycles++;
+    setTimeout(() => runNextCycle(sock), H.humanDelay(1000, 0.3, 0.1));
+    return;
   }
+  startAction(sock, type);
 }
 
 function getMiningWaypoints() {
