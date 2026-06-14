@@ -899,10 +899,10 @@ function runNextCycle(sock) {
   // v23: Enhanced cycle order — reshuffle non-sell portion for variety
   let order;
   if(stats.cycles % 8 === 1) {
-    const tail = H.shuffle(['mining', 'fishing', 'combat', 'mining', 'fishing', 'combat', 'mining']);
+    const tail = H.shuffle(['mining', 'mining', 'mining', 'mining', 'mining', 'mining', 'mining']);
     order = ['sell', ...tail];
   } else {
-    order = ['sell', 'mining', 'fishing', 'combat', 'mining', 'fishing', 'combat', 'mining'];
+    order = ['sell', 'mining', 'mining', 'mining', 'mining', 'mining', 'mining', 'mining'];
   }
   const type = order[(stats.cycles - 1) % order.length];
 
