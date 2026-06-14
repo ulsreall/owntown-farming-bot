@@ -1332,7 +1332,13 @@ async function startBot() {
       setTimeout(() => {
         if(!started) {
           started = true;
-          waitForInventory(socket, () => runNextCycle(socket));
+          waitForInventory(socket, () => {
+            // Walk a few steps to trigger zone detection
+            for(let i = 0; i < 5; i++) {
+              socket.emit('player:input', {pos:{x:pos.x+i*0.5,y:0,z:pos.z+i*0.5},rotY:0,anim:'walk'});
+            }
+            setTimeout(() => runNextCycle(socket), 2000);
+          });
         }
       }, 3000);
     }, connectDelay);
