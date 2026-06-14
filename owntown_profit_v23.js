@@ -1033,7 +1033,8 @@ async function startBot() {
   // === PLAYER STATE ===
   socket.on('player:correction', (d) => { if(d.pos) { pos.x = d.pos.x; pos.z = d.pos.z; } });
   socket.on('player:state', (d) => {
-    if(d.zone) zone = d.zone;
+    const newZone = d.zone || d.zoneName;
+    if(newZone) { zone = newZone; log(`📍 Zone: ${zone}`); }
     if(d.gameBalance !== undefined) balance = d.gameBalance;
     if(d.level !== undefined) level = d.level;
     if(d.stamina !== undefined) stamina = d.stamina;
