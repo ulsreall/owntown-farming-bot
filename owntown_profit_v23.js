@@ -936,7 +936,15 @@ function runNextCycle(sock) {
     }
   }
 
-  // Skip fishing when daily cap hit — save proxy bandwidth, focus on mining/combat
+  // Skip fishing when not in pond zone — server disconnects if fishing in wrong zone
+  if(type === 'fishing' && zone !== 'pond') {
+    log(`🎣 Skip: zone ${zone} (need pond)`);
+    stats.cycles++;
+    setTimeout(() => runNextCycle(sock), H.humanDelay(1000, 0.3, 0.1));
+    return;
+  }
+
+  // Skip fishing when daily cap hit — save proxy bandwidth
   if(type === 'fishing' && stats.dailyEarned >= 5000) {
     log(`🎣 Skip: daily cap ${stats.dailyEarned}/5000`);
     stats.cycles++;
@@ -991,8 +999,8 @@ function getCombatWaypoints() {
 
 function startAction(sock, type) {
   if(type === 'combat') {
-    const mon = MONSTERS[stats.currentMonsterIdx % MONSTERS.length];
-    walkDirect(sock, mon.pos, () => doActions(sock, type));
+    // Don't walk to monster — too far via proxy, causes disconnect
+    doActions(sock, type);
   }
   else if(type === 'mining') {
     const node = MINING_NODES[stats.currentNodeIdx % MINING_NODES.length];
