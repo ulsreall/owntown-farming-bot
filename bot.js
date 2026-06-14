@@ -876,9 +876,10 @@ function runNextCycle(sock) {
   // Human-like random actions between cycles (8% chance)
   const humanAction = H.maybeHumanAction(0.08);
   if(humanAction) {
-    if(humanAction === 'checkLedger') { checkLedger(sock); H.bumpStat('humanActions'); }
-    else if(humanAction === 'browseMarket') { sock.emit('marketplace:list'); H.bumpStat('humanActions'); }
-    else if(humanAction === 'checkProperty') { sock.emit('property:info', {}); H.bumpStat('humanActions'); }
+    if(humanAction === 'check_ledger') { checkLedger(sock); H.bumpStat('humanActions'); }
+    else if(humanAction === 'idle_browse') { sock.emit('marketplace:list'); H.bumpStat('humanActions'); }
+    else if(humanAction === 'check_property') { sock.emit('property:info', {}); H.bumpStat('humanActions'); }
+    else if(humanAction === 'check_bank') { checkBank(token); H.bumpStat('humanActions'); }
     else {
       // Random idle pause
       const dur = H.humanDelay(2000, 0.3, 0.1);
