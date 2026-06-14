@@ -1000,6 +1000,12 @@ function startAction(sock, type) {
         return;
       }
       pvpAttack(sock);
+      // Timeout: if no match in 5s, try again or skip
+      setTimeout(() => {
+        if(!pvpState || pvpState.status === 'unknown' || pvpState.status === 'queueing') {
+          pvpTry();
+        }
+      }, 5000);
     };
     setTimeout(pvpTry, H.humanDelay(2000, 0.3, 0.1));
   }
