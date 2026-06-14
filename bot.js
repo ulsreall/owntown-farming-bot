@@ -4,6 +4,7 @@ const https = require('https');
 const nacl = require('tweetnacl');
 const bs58 = require('bs58').default;
 const H = require('./humanize');  // Anti-detection helpers
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // ============ CONFIG ============
 const TOKEN_PATH = '/tmp/owntown_token.txt';
@@ -12,14 +13,32 @@ const WALLET_FILE = '/root/.hermes/owntown-attack-wallet.json';
 const LOG = '/tmp/owntown_v23.log';
 fs.writeFileSync(LOG, '');
 
+// ============ PROXY POOL ============
+const PROXY_CREDS = 'e5tmelqjx7qm:7dhznfcchmsr22l';
+const PROXY_POOL = [
+  '209.50.186.129:3129', '209.50.181.125:3129', '209.50.172.10:3129',
+  '209.50.173.97:3129', '65.111.20.189:3129', '65.111.12.70:3129',
+  '65.111.6.193:3129', '209.50.175.125:3129', '65.111.21.208:3129',
+  '193.56.28.155:3129',
+];
+let _proxyIdx = 0;
+function getProxy() {
+  const p = PROXY_POOL[_proxyIdx % PROXY_POOL.length];
+  _proxyIdx++;
+  return `http://${PROXY_CREDS}@${p}`;
+}
+function getProxyAgent() {
+  return new HttpsProxyAgent(getProxy());
+}
+
 function log(m) {
   const l = new Date().toISOString().slice(11,19) + ' | ' + m;
   fs.appendFileSync(LOG, l + '\n');
   process.stdout.write(l + '\n');
 }
 
-log('=== OWNTOWN PROFIT FARMER v24.0 ANTI-DETECT ===');
-log('FEATURES: PvP + Property + Shop + Crafting + Bank + Vehicle + Smart Sell + Humanized');
+log('=== OWNTOWN PROFIT FARMER v24.1 PROXY ===');
+log('FEATURES: PvP + Property + Shop + Crafting + Bank + Vehicle + Smart Sell + Humanized + Proxy Rotation');
 
 // ============ CONSTANTS ============
 const WALK_SPEED = 0.4;
@@ -202,7 +221,8 @@ function apiRequest(method, path, body, token) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (data) headers['Content-Length'] = Buffer.byteLength(data);
     const req = https.request({
-      hostname: 'owntown.fun', path, method, headers
+      hostname: 'owntown.fun', path, method, headers,
+      agent: getProxyAgent()
     }, (res) => {
       let d = '';
       res.on('data', c => d += c);
@@ -1009,7 +1029,7 @@ async function startBot() {
     try { global._activeSocket.removeAllListeners(); global._activeSocket.disconnect(); } catch(e) {}
     global._activeSocket = null;
   }
-  const socket = io('https://owntown.fun', { auth: { token }, transports: ['websocket'], reconnection: false });
+  const socket = io('https://owntown.fun', { auth: { token }, transports: ['websocket'], reconnection: false, agent: getProxyAgent() });
   global._activeSocket = socket;
 
   // === PLAYER STATE ===
