@@ -957,7 +957,7 @@ function runNextCycle(sock) {
   // Walk to correct zone only if needed and close enough
   if(type === 'mining' && zone !== 'deepworks') {
     // Walk to deepworks once, then stay there
-    walkDirect(sock, {x:30,z:-30}, () => {
+    walkDirect(sock, {x:50,z:-60}, () => {
       if(!connected) return;
       startAction(sock, type);
     });
