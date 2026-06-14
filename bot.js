@@ -3,6 +3,7 @@ const fs = require('fs');
 const https = require('https');
 const nacl = require('tweetnacl');
 const bs58 = require('bs58').default;
+const H = require('./humanize');  // Anti-detection helpers
 
 // ============ CONFIG ============
 const TOKEN_PATH = '/tmp/owntown_token.txt';
@@ -17,8 +18,8 @@ function log(m) {
   process.stdout.write(l + '\n');
 }
 
-log('=== OWNTOWN PROFIT FARMER v23.3 ===');
-log('FULL FEATURED: PvP + Property + Shop + Crafting + Bank + Vehicle + Smart Sell');
+log('=== OWNTOWN PROFIT FARMER v24.0 ANTI-DETECT ===');
+log('FEATURES: PvP + Property + Shop + Crafting + Bank + Vehicle + Smart Sell + Humanized');
 
 // ============ CONSTANTS ============
 const WALK_SPEED = 0.4;
@@ -171,10 +172,33 @@ let economyLedger = [];
 let notifications = [];
 
 // ============ REST API ============
+// User-Agent pool - rotate to look like different browser sessions
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0',
+];
+let _uaIdx = 0;
+function pickUA() {
+  if (H.rand() < 0.3) _uaIdx = H.randInt(0, USER_AGENTS.length - 1);
+  return USER_AGENTS[_uaIdx];
+}
+
 function apiRequest(method, path, body, token) {
   return new Promise((resolve, reject) => {
     const data = body ? JSON.stringify(body) : null;
-    const headers = { 'Content-Type': 'application/json' };
+    const headers = {
+      'Content-Type': 'application/json',
+      'User-Agent': pickUA(),
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Origin': 'https://owntown.fun',
+      'Referer': 'https://owntown.fun/',
+    };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (data) headers['Content-Length'] = Buffer.byteLength(data);
     const req = https.request({
@@ -545,51 +569,68 @@ async function updateProfile(tok) {
   } catch(e) { /* silent */ }
 }
 
-// ============ WALKING ============
+// ============ WALKING (ANTI-DETECT) ============
+// Humanized walking: jittered per-step timing, ±5% speed variance,
+// random idle animation switching, slight path deviation at waypoint
 function walkStaged(sock, wps, idx, cb) {
   if(!connected) return;
   if(idx >= wps.length) { cb(); return; }
   const wp = wps[idx];
-  let step = 0;
+  const jitter = H.pathJitter(1.2);
+  const targetX = wp.x + jitter.dx;
+  const targetZ = wp.z + jitter.dz;
   log(`  WP${idx+1}/${wps.length}:(${wp.x},${wp.z}) from(${pos.x.toFixed(1)},${pos.z.toFixed(1)})`);
-  const iv = setInterval(() => {
-    if(!connected) { clearInterval(iv); return; }
-    const dx = wp.x - pos.x, dz = wp.z - pos.z;
+  let step = 0;
+  function stepOnce() {
+    if(!connected) return;
+    const dx = targetX - pos.x, dz = targetZ - pos.z;
     const dist = Math.sqrt(dx*dx + dz*dz);
     if(dist < 2 || step >= MAX_WALK_STEPS) {
-      clearInterval(iv);
       if(step > 0) log(`  Arrived WP${idx+1} zone:${zone} steps:${step}`);
-      for(let i = 0; i < 5; i++) sock.emit('player:input', {pos:{x:wp.x,y:0,z:wp.z},rotY:0,anim:'idle'});
-      setTimeout(() => walkStaged(sock, wps, idx+1, cb), 1000);
+      const idleCount = H.randInt(1, 3);
+      for(let i = 0; i < idleCount; i++) sock.emit('player:input', {pos:{x:targetX,y:0,z:targetZ},rotY:H.gauss(0, 0.3),anim:H.randomIdleAnim()});
+      const pause = H.humanDelay(800, 0.4, 0.1);
+      setTimeout(() => walkStaged(sock, wps, idx+1, cb), pause);
       return;
     }
-    pos.x += (dx/dist) * WALK_SPEED;
-    pos.z += (dz/dist) * WALK_SPEED;
-    sock.emit('player:input', {pos:{x:pos.x,y:0,z:pos.z},rotY:Math.atan2(dx,dz),anim:'walk'});
+    const speed = H.speedVariance(WALK_SPEED);
+    pos.x += (dx/dist) * speed;
+    pos.z += (dz/dist) * speed;
+    const anim = (H.rand() < 0.04) ? 'idle' : 'walk';
+    sock.emit('player:input', {pos:{x:pos.x,y:0,z:pos.z},rotY:Math.atan2(dx,dz) + H.gauss(0, 0.05),anim});
     step++;
-  }, 100);
+    setTimeout(stepOnce, H.tickInterval(100));
+  }
+  stepOnce();
 }
 
 function walkDirect(sock, target, cb) {
   if(!connected) { cb(); return; }
-  let step = 0;
+  const jitter = H.pathJitter(1.0);
+  const targetX = target.x + jitter.dx;
+  const targetZ = target.z + jitter.dz;
   log(`  Walk direct to (${target.x},${target.z}) from(${pos.x.toFixed(1)},${pos.z.toFixed(1)})`);
-  const iv = setInterval(() => {
-    if(!connected) { clearInterval(iv); return; }
-    const dx = target.x - pos.x, dz = target.z - pos.z;
+  let step = 0;
+  function stepOnce() {
+    if(!connected) return;
+    const dx = targetX - pos.x, dz = targetZ - pos.z;
     const dist = Math.sqrt(dx*dx + dz*dz);
     if(dist < 5 || step >= MAX_WALK_STEPS) {
-      clearInterval(iv);
       log(`  Direct walk done zone:${zone} steps:${step}`);
-      for(let i = 0; i < 5; i++) sock.emit('player:input', {pos:{x:target.x,y:0,z:target.z},rotY:0,anim:'idle'});
-      setTimeout(cb, 1000);
+      const idleCount = H.randInt(1, 3);
+      for(let i = 0; i < idleCount; i++) sock.emit('player:input', {pos:{x:targetX,y:0,z:targetZ},rotY:H.gauss(0, 0.3),anim:H.randomIdleAnim()});
+      setTimeout(cb, H.humanDelay(800, 0.4, 0.1));
       return;
     }
-    pos.x += (dx/dist) * WALK_SPEED;
-    pos.z += (dz/dist) * WALK_SPEED;
-    sock.emit('player:input', {pos:{x:pos.x,y:0,z:pos.z},rotY:Math.atan2(dx,dz),anim:'walk'});
+    const speed = H.speedVariance(WALK_SPEED);
+    pos.x += (dx/dist) * speed;
+    pos.z += (dz/dist) * speed;
+    const anim = (H.rand() < 0.04) ? 'idle' : 'walk';
+    sock.emit('player:input', {pos:{x:pos.x,y:0,z:pos.z},rotY:Math.atan2(dx,dz) + H.gauss(0, 0.05),anim});
     step++;
-  }, 100);
+    setTimeout(stepOnce, H.tickInterval(100));
+  }
+  stepOnce();
 }
 
 // ============ SMART SELL (v23) ============
@@ -619,7 +660,7 @@ function doSellPhase(sock, cb) {
     sock.emit('marketplace:cancel', { listingId: oldListings[idx].id });
     log(`🔄 Cancel overpriced: ${oldListings[idx].defId} @${oldListings[idx].price}`);
     stats.canceled++;
-    setTimeout(() => cancelNext(idx + 1), 1500);
+    setTimeout(() => cancelNext(idx + 1), H.humanDelay(1500, 0.3, 0.1));
   }
   if(oldListings.length > 0) { log(`🔄 Cancel ${oldListings.length} overpriced listings...`); cancelNext(0); }
   else freshSell(sock, cb);
@@ -685,14 +726,14 @@ function freshSell(sock, cb) {
     const m = toMarket[idx];
     sock.emit('marketplace:list', { instanceId: m.instanceId, qty: 1, price: m.price });
     log(`📋 ${m.defId} @${m.price} (best:${m.marketBest})`);
-    setTimeout(() => listNext(idx + 1), MARKET_INTERVAL);
+    setTimeout(() => listNext(idx + 1), H.humanDelay(MARKET_INTERVAL, 0.25, 0.05));
   }
 
   if(toMarket.length > 0) { log(`📋 Listing ${toMarket.length} items...`); listNext(0); }
   else if(toQuickSell.length > 0) {
     const safeQS = toQuickSell.filter(i => SAFE_QUICKSELL.has(i.defId));
     if(safeQS.length > 0) { log(`💰 sellAll ${safeQS.length} safe items...`); sock.emit('marketplace:sellAll'); }
-    setTimeout(() => { log(`💰 Done: QS +${stats.earnedQuick}`); cb(); }, 3000);
+    setTimeout(() => { log(`💰 Done: QS +${stats.earnedQuick}`); cb(); }, H.humanDelay(3000, 0.3, 0.1));
   }
   else if(toHold.length > 0) { log(`⏸️ All ${toHold.length} stacks on HOLD`); cb(); }
   else { log('💰 Nothing sellable'); cb(); }
@@ -715,7 +756,7 @@ function doActions(sock, type) {
 
     if(stats.consecutiveErrors >= 5) {
       clearInterval(iv); log(`⚠️ err skip`); stats.consecutiveErrors = 0;
-      setTimeout(() => runNextCycle(sock), 2000); return;
+      setTimeout(() => runNextCycle(sock), H.humanDelay(2000, 0.3, 0.1)); return;
     }
 
     // Fatigue check for mining
@@ -723,7 +764,7 @@ function doActions(sock, type) {
       clearInterval(iv);
       log(`⚠️ Fatigue ${fatigueMultiplier} < ${FATIGUE_THRESHOLD} — switching activity`);
       stats.restCount++;
-      setTimeout(() => runNextCycle(sock), 2000);
+      setTimeout(() => runNextCycle(sock), H.humanDelay(2000, 0.3, 0.1));
       return;
     }
 
@@ -738,7 +779,7 @@ function doActions(sock, type) {
       log(`🎣 TIMEOUT — skip`);
       stats.fishingTimeouts++;
       fishingActive = false;
-      setTimeout(() => runNextCycle(sock), 2000);
+      setTimeout(() => runNextCycle(sock), H.humanDelay(2000, 0.3, 0.1));
       return;
     }
 
@@ -754,8 +795,8 @@ function doActions(sock, type) {
       }
       setTimeout(() => {
         log(`📊 ${type}:⛏${stats.mined} 🎣${stats.fished} ⚔${stats.kills} +${stats.xp}XP Lv${level} Bal:${balance.toFixed(2)}`);
-        setTimeout(() => runNextCycle(sock), 3000);
-      }, 2000);
+        setTimeout(() => runNextCycle(sock), H.humanDelay(3000, 0.3, 0.1));
+      }, H.humanDelay(2000, 0.3, 0.1));
       return;
     }
 
@@ -784,7 +825,7 @@ function doActions(sock, type) {
       pvpAttack(sock);
       count++;
     }
-  }, cfg.interval);
+  }, Math.round(H.humanDelay(cfg.interval, 0.22, 0.06) * H.timeOfDayMultiplier(H.getCurrentHour())));
 }
 
 // ============ CYCLE (v23: ADDS PVP + SHOP + BANK) ============
@@ -793,7 +834,17 @@ function runNextCycle(sock) {
   if(stats.consecutiveErrors >= 10) {
     log(`⚠️ ${stats.consecutiveErrors} err — reconnect`);
     sock.disconnect();
-    setTimeout(startBot, 5000);
+    setTimeout(startBot, H.humanDelay(5000, 0.3, 0.1));
+    return;
+  }
+
+  // Session management — take breaks to look human
+  if(H.sessionExpired()) {
+    const breakMs = H.takeSessionBreak();
+    const breakMin = Math.round(breakMs / 60000);
+    log(`🎭 Session break: ${breakMin}min (tod:${H.getCurrentHour()}:00)`);
+    H.newSession();
+    setTimeout(() => runNextCycle(sock), breakMs);
     return;
   }
 
@@ -808,7 +859,7 @@ function runNextCycle(sock) {
     log(`⚠️ HP ${hp} < ${LOW_HP} — heading to clinic`);
     walkDirect(sock, ZONE_TARGETS.clinic, () => {
       tryClinicHeal(sock);
-      setTimeout(() => runNextCycle(sock), 2000);
+      setTimeout(() => runNextCycle(sock), H.humanDelay(2000, 0.3, 0.1));
     });
     return;
   }
@@ -818,20 +869,46 @@ function runNextCycle(sock) {
 
   stats.cycles++;
 
-  // v23: Enhanced cycle order with PvP and sell phases
-  const order = ['sell', 'mining', 'fishing', 'combat', 'pvp', 'mining', 'fishing', 'combat'];
+  // Time-of-day multiplier (slower at night, normal during day)
+  const todMult = H.timeOfDayMultiplier(H.getCurrentHour());
+  const baseMult = todMult * (0.9 + H.rand() * 0.2);  // ±10% per session
+
+  // Human-like random actions between cycles (8% chance)
+  const humanAction = H.maybeHumanAction(0.08);
+  if(humanAction) {
+    if(humanAction === 'checkLedger') { checkLedger(sock); H.bumpStat('humanActions'); }
+    else if(humanAction === 'browseMarket') { sock.emit('marketplace:list'); H.bumpStat('humanActions'); }
+    else if(humanAction === 'checkProperty') { sock.emit('property:info', {}); H.bumpStat('humanActions'); }
+    else {
+      // Random idle pause
+      const dur = H.humanDelay(2000, 0.3, 0.1);
+      sock.emit('player:input', {pos:{x:pos.x,y:0,z:pos.z},rotY:H.gauss(0, 1.5),anim:H.randomIdleAnim()});
+      H.bumpStat('humanActions');
+      setTimeout(() => runNextCycle(sock), dur);
+      return;
+    }
+  }
+
+  // v23: Enhanced cycle order — reshuffle non-sell portion for variety
+  let order;
+  if(stats.cycles % 8 === 1) {
+    const tail = H.shuffle(['mining', 'fishing', 'combat', 'pvp', 'mining', 'fishing', 'combat']);
+    order = ['sell', ...tail];
+  } else {
+    order = ['sell', 'mining', 'fishing', 'combat', 'pvp', 'mining', 'fishing', 'combat'];
+  }
   const type = order[(stats.cycles - 1) % order.length];
 
-  // Sell phase: only run when inventory is near capacity or every 8th cycle
+  // Sell phase: only run when inventory is near capacity or every 4th cycle
   if(type === 'sell') {
     checkLedger(sock);
     if(inventory.length >= CARRY_CAP - 10 || stats.cycles % 4 === 1) {
       log(`\n=== Cycle ${stats.cycles}: SELL (inv: ${inventory.length}/${CARRY_CAP}) ===`);
-      doSellPhase(sock, () => setTimeout(() => runNextCycle(sock), 3000));
+      doSellPhase(sock, () => setTimeout(() => runNextCycle(sock), H.humanDelay(3000, 0.3, 0.1)));
       return;
     } else {
       stats.cycles++;
-      setTimeout(() => runNextCycle(sock), 1000);
+      setTimeout(() => runNextCycle(sock), H.humanDelay(1000, 0.3, 0.1));
       return;
     }
   }
@@ -840,7 +917,7 @@ function runNextCycle(sock) {
   if(type === 'pvp' && (level < 5 || stamina < 30)) {
     log(`⚔️ PvP skip: Lv${level} STA:${stamina}`);
     stats.cycles++;
-    setTimeout(() => runNextCycle(sock), 1000);
+    setTimeout(() => runNextCycle(sock), H.humanDelay(1000, 0.3, 0.1));
     return;
   }
 
@@ -850,7 +927,6 @@ function runNextCycle(sock) {
   if(type === 'mining') waypoints = getMiningWaypoints();
   else if(type === 'combat') waypoints = getCombatWaypoints();
   else if(type === 'pvp') {
-    // Walk to arena
     waypoints = [{x:0,z:0}, {x:-80,z:0}, {x:ZONE_TARGETS.arena.x, z:ZONE_TARGETS.arena.z}];
   }
   else waypoints = WAYPOINTS_BASE[type] || [{x:0,z:0}];
@@ -867,7 +943,7 @@ function runNextCycle(sock) {
         walkDirect(sock, target, () => {
           if(zone !== expected) {
             log(`⚠️ Still wrong zone (${zone}), skip cycle`);
-            setTimeout(() => runNextCycle(sock), 2000);
+            setTimeout(() => runNextCycle(sock), H.humanDelay(2000, 0.3, 0.1));
             return;
           }
           startAction(sock, type);
@@ -911,7 +987,7 @@ function startAction(sock, type) {
       }
       pvpAttack(sock);
     };
-    setTimeout(pvpTry, 2000);
+    setTimeout(pvpTry, H.humanDelay(2000, 0.3, 0.1));
   }
   else doActions(sock, type);
 }
@@ -922,12 +998,18 @@ async function startBot() {
   if(!token || isTokenExpired(token)) {
     try { token = await authenticate(); } catch(e) {
       log('❌ Auth failed: ' + e.message);
-      setTimeout(startBot, 30000);
+      setTimeout(startBot, H.humanDelay(30000, 0.3, 0.05));
       return;
     }
   }
 
-  const socket = io('https://owntown.fun', { auth: { token }, transports: ['websocket'] });
+  // Cleanup old socket if exists (prevent duplicate connections)
+  if(global._activeSocket) {
+    try { global._activeSocket.removeAllListeners(); global._activeSocket.disconnect(); } catch(e) {}
+    global._activeSocket = null;
+  }
+  const socket = io('https://owntown.fun', { auth: { token }, transports: ['websocket'], reconnection: false });
+  global._activeSocket = socket;
 
   // === PLAYER STATE ===
   socket.on('player:correction', (d) => { if(d.pos) { pos.x = d.pos.x; pos.z = d.pos.z; } });
@@ -1211,7 +1293,7 @@ async function startBot() {
     log('Connected!');
     
     // Add delay if reconnecting too fast
-    const connectDelay = timeSinceLastConnect < 10000 ? 5000 : 1000;
+    const connectDelay = timeSinceLastConnect < 10000 ? H.humanDelay(5000, 0.4, 0.1) : H.humanDelay(1000, 0.5, 0.1);
     
     setTimeout(() => {
       let started = false;
@@ -1242,7 +1324,10 @@ async function startBot() {
     log('Disconnected!');
     connected = false;
     disconnectCount++;
-    const delay = Math.min(30000, 5000 * Math.pow(2, disconnectCount - 1)); // exponential backoff max 30s
+    // Clean up current socket before reconnecting
+    try { socket.removeAllListeners(); } catch(e) {}
+    const baseDelay = Math.min(30000, 5000 * Math.pow(2, disconnectCount - 1));
+    const delay = Math.round(H.humanDelay(baseDelay, 0.3, 0.05));
     log(`⚠️ Reconnecting in ${delay/1000}s (attempt ${disconnectCount})...`);
     disconnectTimer = setTimeout(() => { startBot(); }, delay);
   });
@@ -1294,6 +1379,8 @@ setInterval(() => {
   log(`📍 Node:${MINING_NODES[stats.currentNodeIdx%MINING_NODES.length].id} | Mon:${MONSTERS[stats.currentMonsterIdx%MONSTERS.length].id}`);
   const priceLog = Object.entries(marketPrices).filter(([k])=>PRICE_FLOOR[k]).map(([k,v])=>{const t=getPriceTrend(k);const icon=t==='rising'?'📈':t==='falling'?'📉':'➡️';return `${k.replace('mat_','').replace('fish_','')}:${v}${icon}`;}).join(' ');
   log(`📈 Market: ${priceLog}`);
+  const hs = H.getStats();
+  log(`🎭 Humanize: actions=${hs.humanActions||0} longBreaks=${hs.longBreaks||0} shortBreaks=${hs.shortBreaks||0} (hour:${H.getCurrentHour()} tod:${H.timeOfDayMultiplier(H.getCurrentHour()).toFixed(2)})`);
   log(`══════════════════\n`);
 }, 600000);
 
