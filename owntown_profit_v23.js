@@ -954,8 +954,22 @@ function runNextCycle(sock) {
 
   log(`\n=== Cycle ${stats.cycles}: ${type.toUpperCase()} ===`);
 
-  // Skip walkStaged — just do action from current position (prevents long walk disconnects)
-  startAction(sock, type);
+  // Walk to correct zone only if needed and close enough
+  if(type === 'mining' && zone !== 'deepworks') {
+    // Walk to deepworks once, then stay there
+    walkDirect(sock, {x:30,z:-30}, () => {
+      if(!connected) return;
+      startAction(sock, type);
+    });
+  } else if(type === 'combat' && zone !== 'redline_a') {
+    // Walk to combat zone
+    walkDirect(sock, {x:-30,z:0}, () => {
+      if(!connected) return;
+      startAction(sock, type);
+    });
+  } else {
+    startAction(sock, type);
+  }
 }
 
 function getMiningWaypoints() {
