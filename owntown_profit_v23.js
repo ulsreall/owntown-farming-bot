@@ -944,6 +944,14 @@ function runNextCycle(sock) {
     return;
   }
 
+  // Skip mining when daily cap hit — no earning possible
+  if(type === 'mining' && stats.dailyEarned >= 5000) {
+    log(`⛏ Skip: daily cap ${stats.dailyEarned}/5000`);
+    stats.cycles++;
+    setTimeout(() => runNextCycle(sock), H.humanDelay(1000, 0.3, 0.1));
+    return;
+  }
+
   // Skip PvP if not enough level/stamina
   if(type === 'pvp' && (level < 5 || stamina < 30)) {
     log(`⚔️ PvP skip: Lv${level} STA:${stamina}`);
@@ -958,7 +966,7 @@ function runNextCycle(sock) {
   if(type === 'mining') waypoints = getMiningWaypoints();
   else if(type === 'combat') waypoints = getCombatWaypoints();
   else if(type === 'pvp') {
-    waypoints = [{x:0,z:0}, {x:-80,z:0}, {x:ZONE_TARGETS.arena.x, z:ZONE_TARGETS.arena.z}];
+    waypoints = [{x:0,z:0}, {x:-30,z:0}];
   }
   else waypoints = WAYPOINTS_BASE[type] || [{x:0,z:0}];
 
@@ -966,34 +974,19 @@ function runNextCycle(sock) {
     if(!connected) return;
     const expected = EXPECTED_ZONE[type];
     if(expected && zone !== expected && zone !== 'unknown') {
-      log(`⚠️ WRONG ZONE: expected ${expected}, got ${zone}`);
+      log(`⚠️ Zone: expected ${expected}, got ${zone} — trying anyway`);
       stats.wrongZone++;
-      const target = ZONE_TARGETS[expected];
-      if(target) {
-        log(`🔄 Retrying walk to ${expected}...`);
-        walkDirect(sock, target, () => {
-          if(zone !== expected) {
-            log(`⚠️ Still wrong zone (${zone}), skip cycle`);
-            setTimeout(() => runNextCycle(sock), H.humanDelay(2000, 0.3, 0.1));
-            return;
-          }
-          startAction(sock, type);
-        });
-        return;
-      }
     }
     startAction(sock, type);
   });
 }
 
 function getMiningWaypoints() {
-  const node = MINING_NODES[stats.currentNodeIdx % MINING_NODES.length];
-  return [{x:0,z:0}, {x:node.pos.x, z:node.pos.z}];
+  return [{x:0,z:0}, {x:30,z:-30}];
 }
 
 function getCombatWaypoints() {
-  const mon = MONSTERS[stats.currentMonsterIdx % MONSTERS.length];
-  return [{x:0,z:0}, {x:-80,z:0}, {x:mon.pos.x, z:mon.pos.z}];
+  return [{x:0,z:0}, {x:-30,z:0}];
 }
 
 function startAction(sock, type) {
