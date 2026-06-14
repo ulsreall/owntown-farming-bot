@@ -982,13 +982,11 @@ function getCombatWaypoints() {
 
 function startAction(sock, type) {
   if(type === 'combat') {
-    // Don't walk to monster — too far, causes disconnect
     doActions(sock, type);
   }
   else if(type === 'mining') {
-    // Walk to node position, then mine. Don't walk back after.
-    const node = MINING_NODES[stats.currentNodeIdx % MINING_NODES.length];
-    walkDirect(sock, node.pos, () => doActions(sock, type));
+    // Mine from current position — don't walk to node (causes disconnects)
+    doActions(sock, type);
   }
   else if(type === 'pvp') {
     pvpQueue(sock);
